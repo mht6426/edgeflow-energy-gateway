@@ -1,0 +1,18 @@
+{
+  "device_id": "gw-001",
+  "simulate": true,
+  "serial_device": "/dev/ttyUSB0",
+  "poll_interval_ms": 500,
+  "queue_size": 4096,
+  "deadband": 0.1,
+  "temp_high": 60.0,
+  "peak_shaving_threshold_kw": 120.0,
+  "max_discharge_kw": 50.0,
+  "min_discharge_soc": 30.0,
+  "broker_host": "127.0.0.1",
+  "broker_port": 1883,
+  "mqtt_topic": "plant/line1/gw-001/telemetry",
+  "log_dir": "/var/log/edgeflow",
+  "metrics_path": "/run/edgeflow/metrics.prom",
+  "cache_path": "/var/lib/edgeflow/offline-cache.jsonl"
+}

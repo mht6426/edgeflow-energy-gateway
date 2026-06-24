@@ -1,0 +1,26 @@
+{
+  "slave_id": 1,
+  "points": [
+    {
+      "tag": "energy_kwh",
+      "register": 0,
+      "type": "uint32",
+      "scale": 0.1,
+      "unit": "kWh"
+    },
+    {
+      "tag": "temperature",
+      "register": 2,
+      "type": "int16",
+      "scale": 0.1,
+      "unit": "C"
+    },
+    {
+      "tag": "current_a",
+      "register": 3,
+      "type": "uint16",
+      "scale": 0.1,
+      "unit": "A"
+    }
+  ]
+}

@@ -1,0 +1,17 @@
+[Unit]
+Description=EdgeFlow Industrial Controller
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/edgeflow -c /etc/edgeflow/gateway.json
+Restart=on-failure
+RestartSec=5
+LimitNOFILE=65536
+RuntimeDirectory=edgeflow
+StateDirectory=edgeflow
+LogsDirectory=edgeflow
+
+[Install]
+WantedBy=multi-user.target
