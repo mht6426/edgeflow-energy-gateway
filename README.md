@@ -1,6 +1,6 @@
 # EdgeFlow Industrial Controller
 
-[![CI](https://github.com/OWNER/edgeflow-energy-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/OWNER/edgeflow-energy-gateway/actions/workflows/ci.yml)
+[![CI](https://github.com/mht6426/edgeflow-energy-gateway/actions/workflows/ci.yml/badge.svg)](https://github.com/mht6426/edgeflow-energy-gateway/actions/workflows/ci.yml)
 
 > ARM Linux 工业边缘控制平台
 
@@ -80,7 +80,7 @@ flowchart TD
 **环境要求：** Linux（Ubuntu/Debian 推荐），gcc/clang，cmake ≥ 3.16。Windows 无法原生编译（依赖 POSIX socket/pthread）。
 
 ```bash
-git clone https://github.com/OWNER/edgeflow-energy-gateway.git
+git clone https://github.com/mht6426/edgeflow-energy-gateway.git
 cd edgeflow-energy-gateway
 
 cmake -S . -B build
