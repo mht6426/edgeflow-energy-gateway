@@ -56,6 +56,8 @@ if(BUILD_TESTING)
         tests/test_modbus_crc.c
         src/ingress/modbus_rtu.c
         src/platform/logger.c
+        src/common/time_util.c
+        src/model/device_model.c
     )
     target_include_directories(test_modbus_crc PRIVATE src)
     target_compile_definitions(test_modbus_crc PRIVATE _POSIX_C_SOURCE=200809L)
