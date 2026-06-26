@@ -1,17 +1,38 @@
+/*
+ * config.c — JSON 配置加载实现（M2）
+ *
+ * 平台：Linux（fopen、路径分隔符 /）
+ *
+ * 解析策略：
+ *   轻量手写解析，无 cJSON 等第三方库；仅支持本项目 gateway.json 的扁平键值。
+ *   不支持嵌套对象、数组、注释。字段缺失时保留 gateway_config_defaults 的值。
+ *
+ * 局限（已知，M10 可改进）：
+ *   - 无 schema 校验、无字段范围检查
+ *   - 键名子串误匹配理论风险（当前键名互不包含，可接受）
+ *
+ * 不负责：热更新、环境变量覆盖、加密字段。
+ */
+
 #include "platform/config.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+/* 安全字符串拷贝，保证 NUL 终止 */
 static void copy_string(char *dst, size_t dst_len, const char *src)
 {
     if (dst_len == 0U) {
         return;
     }
-    snprintf(dst, dst_len, "%s", src);
+    snprintf(dst, dst_len, "%s", src != NULL ? src : "");
 }
 
+/*
+ * 将整个配置文件读入堆内存（调用方 free）。
+ * 使用二进制模式 "rb" 避免 Windows 换行干扰（本工程以 Linux 为主，仍保持可移植读取）。
+ */
 static int read_file(const char *path, char **out)
 {
     FILE *fp = fopen(path, "rb");
@@ -45,25 +66,33 @@ static int read_file(const char *path, char **out)
     return 0;
 }
 
+/*
+ * 从扁平 JSON 文本提取字符串字段："key": "value"
+ * 未找到或格式不符时 dst 保持不变。
+ */
 static void json_get_string(const char *json, const char *key, char *dst, size_t dst_len)
 {
     char pattern[64];
-    char *p;
-    char *start;
-    char *end;
-    size_t len;
+    const char *start;
+    const char *end;
 
+    if (json == NULL || key == NULL || dst == NULL || dst_len == 0U) {
+        return;
+    }
     snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-    p = strstr(json, pattern);
-    if (p == NULL) {
-        return;
-    }
-    p = strchr(p + strlen(pattern), ':');
-    if (p == NULL) {
-        return;
-    }
-    start = strchr(p, '"');
+    start = strstr(json, pattern);
     if (start == NULL) {
+        return;
+    }
+    start = strchr(start, ':');
+    if (start == NULL) {
+        return;
+    }
+    start++;
+    while (*start == ' ' || *start == '\t') {
+        start++;
+    }
+    if (*start != '"') {
         return;
     }
     start++;
@@ -71,91 +100,106 @@ static void json_get_string(const char *json, const char *key, char *dst, size_t
     if (end == NULL) {
         return;
     }
-    len = (size_t)(end - start);
-    if (len >= dst_len) {
-        len = dst_len - 1U;
-    }
-    memcpy(dst, start, len);
-    dst[len] = '\0';
+    snprintf(dst, dst_len, "%.*s", (int)(end - start), start);
 }
 
-static void json_get_u32(const char *json, const char *key, uint32_t *value)
+/* 解析 "key": true|false；找到并解析成功返回 true */
+static bool json_get_bool(const char *json, const char *key, bool *out)
 {
     char pattern[64];
-    char *p;
-    unsigned long parsed;
+    const char *pos;
 
     snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-    p = strstr(json, pattern);
-    if (p == NULL) {
-        return;
+    pos = strstr(json, pattern);
+    if (pos == NULL) {
+        return false;
     }
-    p = strchr(p + strlen(pattern), ':');
-    if (p == NULL) {
-        return;
+    pos = strchr(pos, ':');
+    if (pos == NULL) {
+        return false;
     }
-    parsed = strtoul(p + 1, NULL, 10);
-    if (parsed <= UINT32_MAX) {
-        *value = (uint32_t)parsed;
+    pos++;
+    while (*pos == ' ' || *pos == '\t') {
+        pos++;
     }
+    if (strncmp(pos, "true", 4) == 0) {
+        *out = true;
+        return true;
+    }
+    if (strncmp(pos, "false", 5) == 0) {
+        *out = false;
+        return true;
+    }
+    return false;
 }
 
-static void json_get_double(const char *json, const char *key, double *value)
+/* 解析无符号整数 "key": 123 */
+static bool json_get_uint(const char *json, const char *key, uint32_t *out)
 {
     char pattern[64];
-    char *p;
+    const char *pos;
 
     snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-    p = strstr(json, pattern);
-    if (p == NULL) {
-        return;
+    pos = strstr(json, pattern);
+    if (pos == NULL) {
+        return false;
     }
-    p = strchr(p + strlen(pattern), ':');
-    if (p != NULL) {
-        *value = strtod(p + 1, NULL);
+    pos = strchr(pos, ':');
+    if (pos == NULL) {
+        return false;
     }
+    pos++;
+    while (*pos == ' ' || *pos == '\t') {
+        pos++;
+    }
+    *out = (uint32_t)strtoul(pos, NULL, 10);
+    return true;
 }
 
-static void json_get_bool(const char *json, const char *key, bool *value)
+/* 解析浮点 "key": 60.0 */
+static bool json_get_double(const char *json, const char *key, double *out)
 {
     char pattern[64];
-    char *p;
+    const char *pos;
 
     snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-    p = strstr(json, pattern);
-    if (p == NULL) {
-        return;
+    pos = strstr(json, pattern);
+    if (pos == NULL) {
+        return false;
     }
-    p = strchr(p + strlen(pattern), ':');
-    if (p == NULL) {
-        return;
+    pos = strchr(pos, ':');
+    if (pos == NULL) {
+        return false;
     }
-    while (*p == ':' || *p == ' ' || *p == '\t') {
-        p++;
+    pos++;
+    while (*pos == ' ' || *pos == '\t') {
+        pos++;
     }
-    if (strncmp(p, "true", 4U) == 0) {
-        *value = true;
-    } else if (strncmp(p, "false", 5U) == 0) {
-        *value = false;
-    }
+    *out = strtod(pos, NULL);
+    return true;
 }
 
 void gateway_config_defaults(gateway_config_t *cfg)
 {
+    if (cfg == NULL) {
+        return;
+    }
     memset(cfg, 0, sizeof(*cfg));
-    copy_string(cfg->device_id, sizeof(cfg->device_id), "gw-001");
+
+    /* 与 configs/gateway.json 示例对齐，便于开发机 /tmp 下零配置试运行 */
+    copy_string(cfg->device_id, sizeof(cfg->device_id), "gw-dev");
     cfg->simulate = true;
     copy_string(cfg->serial_device, sizeof(cfg->serial_device), "/dev/ttyUSB0");
-    cfg->poll_interval_ms = 500U;
-    cfg->queue_size = 4096U;
+    cfg->poll_interval_ms = 1000U;
+    cfg->queue_size = 1024U;
     cfg->deadband = 0.1;
-    cfg->temp_high = 60.0;
-    cfg->peak_shaving_threshold_kw = 120.0;
-    cfg->max_discharge_kw = 50.0;
-    cfg->min_discharge_soc = 30.0;
+    cfg->temp_high = 55.0;
+    cfg->peak_shaving_threshold_kw = 100.0;
+    cfg->max_discharge_kw = 30.0;
+    cfg->min_discharge_soc = 20.0;
     copy_string(cfg->broker_host, sizeof(cfg->broker_host), "127.0.0.1");
     cfg->broker_port = 1883U;
-    copy_string(cfg->mqtt_topic, sizeof(cfg->mqtt_topic), "plant/line1/gw-001/telemetry");
+    copy_string(cfg->mqtt_topic, sizeof(cfg->mqtt_topic), "edgeflow/telemetry");
     copy_string(cfg->log_dir, sizeof(cfg->log_dir), "/tmp/edgeflow");
     copy_string(cfg->metrics_path, sizeof(cfg->metrics_path), "/tmp/edgeflow/metrics.prom");
     copy_string(cfg->cache_path, sizeof(cfg->cache_path), "/tmp/edgeflow/offline-cache.jsonl");
@@ -164,30 +208,39 @@ void gateway_config_defaults(gateway_config_t *cfg)
 int gateway_config_load(const char *path, gateway_config_t *cfg)
 {
     char *json = NULL;
-    uint32_t port;
+    bool simulate_flag;
+    uint32_t u32_val;
 
-    gateway_config_defaults(cfg);
-    if (path == NULL) {
-        return 0;
+    if (path == NULL || cfg == NULL) {
+        return -1;
     }
+
+    /* 先 defaults，再按 JSON 覆盖 — 保证缺字段时仍可运行 */
+    gateway_config_defaults(cfg);
     if (read_file(path, &json) != 0) {
         return -1;
     }
 
     json_get_string(json, "device_id", cfg->device_id, sizeof(cfg->device_id));
-    json_get_bool(json, "simulate", &cfg->simulate);
+    if (json_get_bool(json, "simulate", &simulate_flag)) {
+        cfg->simulate = simulate_flag;
+    }
     json_get_string(json, "serial_device", cfg->serial_device, sizeof(cfg->serial_device));
-    json_get_u32(json, "poll_interval_ms", &cfg->poll_interval_ms);
-    json_get_u32(json, "queue_size", &cfg->queue_size);
-    json_get_double(json, "deadband", &cfg->deadband);
-    json_get_double(json, "temp_high", &cfg->temp_high);
-    json_get_double(json, "peak_shaving_threshold_kw", &cfg->peak_shaving_threshold_kw);
-    json_get_double(json, "max_discharge_kw", &cfg->max_discharge_kw);
-    json_get_double(json, "min_discharge_soc", &cfg->min_discharge_soc);
+    if (json_get_uint(json, "poll_interval_ms", &u32_val)) {
+        cfg->poll_interval_ms = u32_val;
+    }
+    if (json_get_uint(json, "queue_size", &u32_val)) {
+        cfg->queue_size = u32_val;
+    }
+    (void)json_get_double(json, "deadband", &cfg->deadband);
+    (void)json_get_double(json, "temp_high", &cfg->temp_high);
+    (void)json_get_double(json, "peak_shaving_threshold_kw", &cfg->peak_shaving_threshold_kw);
+    (void)json_get_double(json, "max_discharge_kw", &cfg->max_discharge_kw);
+    (void)json_get_double(json, "min_discharge_soc", &cfg->min_discharge_soc);
     json_get_string(json, "broker_host", cfg->broker_host, sizeof(cfg->broker_host));
-    port = cfg->broker_port;
-    json_get_u32(json, "broker_port", &port);
-    cfg->broker_port = (uint16_t)port;
+    if (json_get_uint(json, "broker_port", &u32_val)) {
+        cfg->broker_port = (uint16_t)u32_val;
+    }
     json_get_string(json, "mqtt_topic", cfg->mqtt_topic, sizeof(cfg->mqtt_topic));
     json_get_string(json, "log_dir", cfg->log_dir, sizeof(cfg->log_dir));
     json_get_string(json, "metrics_path", cfg->metrics_path, sizeof(cfg->metrics_path));
