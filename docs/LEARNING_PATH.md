@@ -3,28 +3,30 @@
 > **用法**：按步骤推进，每步完成「设计 → 代码 → 单元测试 → 集成测试」后再进入下一步。  
 > 与 [MODULE_DESIGN.md](MODULE_DESIGN.md) 模块顺序一致，与 [ROADMAP.md](ROADMAP.md) 三个月目标对齐。
 
-**当前步骤**：**M3 — Device Adapter 插件接口**（进行中）
+**当前步骤**：**M1–M10 + 进阶闭环已完成**（实现边界以 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) 为准）
 
 ---
 
 ## 步骤总览
 
+> 真实实现状态以 [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) 为准；本表记录每步对应的代码产出，供回看时定位。
+
 | 步骤 | 模块 | 关键产出 | 状态 |
 | --- | --- | --- | --- |
 | M1 | 统一设备模型 | `src/model/device_model.*` | ✅ |
 | M2 | Config Manager + Logger | `platform/config.*`、`platform/logger.*` | ✅ |
-| **M3** | Device Adapter 接口 | `ingress/adapter.*`、`stub_adapter.*` | 🔄 进行中 |
-| M4 | Modbus 模拟设备接入 | `ingress/modbus_*` | ⏳ |
-| M5 | State And Alarm Engine | `runtime/state_engine.*`、告警联锁 | ⏳ |
-| M6 | Command Scheduler | `runtime/command_scheduler.*` | ⏳ |
-| M7 | SQLite WAL Storage | `platform/storage.*` | ⏳ |
-| M8 | Reactor + Thread Pool | `core/ring.*`、`runtime/app.*` | ⏳ |
-| M9 | MQTT Uploader | `egress/mqtt_client.*` | ⏳ |
-| M10 | CLI、Metrics、Watchdog | `platform/metrics.*`、CLI、systemd 喂狗 | ⏳ |
+| M3 | Device Adapter 接口 | `ingress/adapter.*`、`stub_adapter.*` | ✅ |
+| M4 | Modbus RTU（模拟 + termios 串口） | `ingress/modbus_*` | ✅ |
+| M5 | State And Alarm Engine | `runtime/state_engine.*` | ✅ |
+| M6 | Command Scheduler | `runtime/command_scheduler.*` | ✅ |
+| M7 | SQLite WAL Storage | `platform/storage.*` | ✅ |
+| M8 | 三线程运行时 + SPSC + epoll/timerfd Reactor | `core/ring.*`、`core/reactor.*`、`runtime/app.*` | ✅ |
+| M9 | MQTT 长连接上报 + 断网补传 | `egress/mqtt_session.*` | ✅ |
+| M10 | CLI、Metrics、Watchdog、Heartbeat | `platform/metrics.*`、`platform/watchdog.*`、`platform/heartbeat.*`、`cli/main.c` | ✅ |
 
 ---
 
-## M3 — Device Adapter 插件接口（当前）
+## M3 — Device Adapter 插件接口
 
 ### 你要理解什么
 
@@ -135,9 +137,9 @@ Adapter 是**协议层与统一模型之间的翻译器**。上层只调用：
 
 > 完整规范见 [CODE_STYLE.md](CODE_STYLE.md)。**每个新建或修改的 `.c` / `.h` / 测试文件都必须带详细中文注释。**
 
-### 默认执行环境：Linux
+### 执行环境：Linux
 
-- 开发与运行以 **Linux** 为准；Windows 使用 WSL，不为 Windows 写兼容代码
+- 开发、运行、部署均在 **Linux** 上，不为其他平台写兼容代码
 - 路径、串口、日志目录使用 Linux 惯例（`/tmp`、`/dev/ttyUSB0`）
 - CMake 启用 `_POSIX_C_SOURCE=200809L`
 

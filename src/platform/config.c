@@ -31,7 +31,7 @@ static void copy_string(char *dst, size_t dst_len, const char *src)
 
 /*
  * 将整个配置文件读入堆内存（调用方 free）。
- * 使用二进制模式 "rb" 避免 Windows 换行干扰（本工程以 Linux 为主，仍保持可移植读取）。
+ * 使用 "rb" 按字节精确读取，按文件长度一次性分配缓冲。
  */
 static int read_file(const char *path, char **out)
 {
@@ -200,15 +200,24 @@ void gateway_config_defaults(gateway_config_t *cfg)
     copy_string(cfg->broker_host, sizeof(cfg->broker_host), "127.0.0.1");
     cfg->broker_port = 1883U;
     copy_string(cfg->mqtt_topic, sizeof(cfg->mqtt_topic), "edgeflow/telemetry");
+    copy_string(cfg->mqtt_alarm_topic, sizeof(cfg->mqtt_alarm_topic), "edgeflow/alarm");
+    copy_string(cfg->mqtt_heartbeat_topic, sizeof(cfg->mqtt_heartbeat_topic), "edgeflow/heartbeat");
     copy_string(cfg->log_dir, sizeof(cfg->log_dir), "/tmp/edgeflow");
     copy_string(cfg->metrics_path, sizeof(cfg->metrics_path), "/tmp/edgeflow/metrics.prom");
     copy_string(cfg->cache_path, sizeof(cfg->cache_path), "/tmp/edgeflow/offline-cache.jsonl");
+    cfg->use_sqlite = true;
+    copy_string(cfg->sqlite_path, sizeof(cfg->sqlite_path), "/tmp/edgeflow/edgeflow.db");
+    cfg->mqtt_replay_batch = 50U;
+    cfg->mqtt_keepalive_sec = 60U;
+    cfg->watchdog_interval_ms = 2000U;
+    cfg->heartbeat_interval_ms = 5000U;
 }
 
 int gateway_config_load(const char *path, gateway_config_t *cfg)
 {
     char *json = NULL;
     bool simulate_flag;
+    bool use_sqlite_flag;
     uint32_t u32_val;
 
     if (path == NULL || cfg == NULL) {
@@ -242,9 +251,27 @@ int gateway_config_load(const char *path, gateway_config_t *cfg)
         cfg->broker_port = (uint16_t)u32_val;
     }
     json_get_string(json, "mqtt_topic", cfg->mqtt_topic, sizeof(cfg->mqtt_topic));
+    json_get_string(json, "mqtt_alarm_topic", cfg->mqtt_alarm_topic, sizeof(cfg->mqtt_alarm_topic));
+    json_get_string(json, "mqtt_heartbeat_topic", cfg->mqtt_heartbeat_topic, sizeof(cfg->mqtt_heartbeat_topic));
     json_get_string(json, "log_dir", cfg->log_dir, sizeof(cfg->log_dir));
     json_get_string(json, "metrics_path", cfg->metrics_path, sizeof(cfg->metrics_path));
     json_get_string(json, "cache_path", cfg->cache_path, sizeof(cfg->cache_path));
+    json_get_string(json, "sqlite_path", cfg->sqlite_path, sizeof(cfg->sqlite_path));
+    if (json_get_bool(json, "use_sqlite", &use_sqlite_flag)) {
+        cfg->use_sqlite = use_sqlite_flag;
+    }
+    if (json_get_uint(json, "mqtt_replay_batch", &u32_val)) {
+        cfg->mqtt_replay_batch = u32_val;
+    }
+    if (json_get_uint(json, "mqtt_keepalive_sec", &u32_val)) {
+        cfg->mqtt_keepalive_sec = u32_val;
+    }
+    if (json_get_uint(json, "watchdog_interval_ms", &u32_val)) {
+        cfg->watchdog_interval_ms = u32_val;
+    }
+    if (json_get_uint(json, "heartbeat_interval_ms", &u32_val)) {
+        cfg->heartbeat_interval_ms = u32_val;
+    }
 
     free(json);
     return 0;

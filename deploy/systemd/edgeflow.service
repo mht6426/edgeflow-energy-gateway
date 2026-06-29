@@ -4,7 +4,9 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
+Type=notify
+NotifyAccess=main
+WatchdogSec=10
 ExecStart=/usr/local/bin/edgeflow -c /etc/edgeflow/gateway.json
 Restart=on-failure
 RestartSec=5

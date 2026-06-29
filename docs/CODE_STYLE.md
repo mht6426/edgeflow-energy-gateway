@@ -8,13 +8,13 @@
 
 | 项 | 约定 |
 | --- | --- |
-| 开发与运行 | Ubuntu/Debian 等 Linux；Windows 请用 **WSL2** 或 Linux 容器 |
+| 开发与运行 | Ubuntu/Debian 等 Linux 发行版 |
 | 部署目标 | RK3568/RK3588 **ARM Linux** |
 | API | POSIX.1-2008（CMake 定义 `_POSIX_C_SOURCE=200809L`） |
 | 路径 | `/tmp/edgeflow`、`/dev/ttyUSB0`、`/var/log/edgeflow` 等 Linux 路径 |
-| 构建 | 非 Linux 配置时 CMake 发出 WARNING |
+| 构建 | 非 Linux 平台 CMake 直接 `FATAL_ERROR` 终止 |
 
-**禁止在本工程中为 Windows 添加兼容分支**（如 `_WIN32`、` _mkdir`）。若需在 Windows 上开发，使用 WSL。
+**本工程仅面向 Linux/POSIX，不添加其他操作系统的兼容分支。**
 
 ---
 
@@ -90,7 +90,7 @@
 提交新代码前自检：
 
 - [ ] 文件头含职责 / 不负责 / 学习阶段
-- [ ] 无 Windows 专用代码路径
+- [ ] 无非 Linux 平台专用代码路径
 - [ ] 公开 API 在 `.h` 有完整注释
 - [ ] 非显而易见逻辑有分段注释
 - [ ] 有对应 `tests/test_*.c` 且带注释

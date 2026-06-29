@@ -12,7 +12,15 @@
   "broker_host": "127.0.0.1",
   "broker_port": 1883,
   "mqtt_topic": "plant/line1/gw-001/telemetry",
+  "mqtt_alarm_topic": "plant/line1/gw-001/alarm",
+  "mqtt_heartbeat_topic": "plant/line1/gw-001/heartbeat",
   "log_dir": "/tmp/edgeflow",
   "metrics_path": "/tmp/edgeflow/metrics.prom",
-  "cache_path": "/tmp/edgeflow/offline-cache.jsonl"
+  "cache_path": "/tmp/edgeflow/offline-cache.jsonl",
+  "use_sqlite": true,
+  "sqlite_path": "/tmp/edgeflow/edgeflow.db",
+  "mqtt_replay_batch": 50,
+  "mqtt_keepalive_sec": 60,
+  "watchdog_interval_ms": 2000,
+  "heartbeat_interval_ms": 5000
 }

@@ -1,17 +1,14 @@
 # EdgeFlow Industrial Controller — CMake 构建
 #
-# 默认目标平台：Linux（x86_64 开发机 / aarch64 板端交叉编译）
-# 依赖 POSIX API（pthread、socket 等将在后续学习步骤引入）
-# 非 Linux 环境请使用 WSL、虚拟机或 Docker，见 README.md
+# 目标平台：Linux（x86_64 开发机 / aarch64 板端交叉编译）
+# 本工程仅支持 Linux，使用 POSIX API，不提供其他平台兼容分支。
 
 cmake_minimum_required(VERSION 3.16)
 
 project(edgeflow_energy_gateway C)
 
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    message(WARNING
-        "EdgeFlow 默认执行环境为 Linux；当前为 ${CMAKE_SYSTEM_NAME}。"
-        "请在 WSL/Ubuntu、ARM 板端或 Linux 容器中构建与运行。")
+    message(FATAL_ERROR "EdgeFlow 仅支持 Linux；当前 CMAKE_SYSTEM_NAME=${CMAKE_SYSTEM_NAME}。")
 endif()
 
 set(CMAKE_C_STANDARD 11)
@@ -27,35 +24,52 @@ function(edgeflow_target_common name)
     target_compile_options(${name} PRIVATE -Wall -Wextra -Wpedantic)
 endfunction()
 
-# 学习阶段 M3：Model + Config + Logger + Adapter
-set(EDGEFLOW_ADAPTER_SOURCES
+find_package(SQLite3 REQUIRED)
+
+set(EDGEFLOW_CORE_SOURCES
+    src/model/device_model.c
+    src/platform/config.c
+    src/platform/logger.c
+    src/platform/storage.c
+    src/platform/metrics.c
+    src/platform/watchdog.c
+    src/platform/heartbeat.c
+    src/common/time_util.c
+    src/core/ring.c
+    src/core/reactor.c
     src/ingress/adapter.c
     src/ingress/stub_adapter.c
-    src/common/time_util.c
+    src/ingress/modbus_rtu.c
+    src/ingress/modbus_serial.c
+    src/ingress/modbus_adapter.c
+    src/runtime/state_engine.c
+    src/runtime/command_scheduler.c
+    src/runtime/app.c
+    src/egress/mqtt_client.c
+    src/egress/mqtt_session.c
 )
 
 add_executable(edgeflow
     src/main.c
-    src/model/device_model.c
-    src/platform/config.c
-    src/platform/logger.c
-    ${EDGEFLOW_ADAPTER_SOURCES}
+    ${EDGEFLOW_CORE_SOURCES}
 )
 edgeflow_target_common(edgeflow)
+target_link_libraries(edgeflow PRIVATE pthread SQLite::SQLite3)
+
+add_executable(edgeflow-cli
+    src/cli/main.c
+    src/platform/config.c
+)
+edgeflow_target_common(edgeflow-cli)
+target_link_libraries(edgeflow-cli PRIVATE SQLite::SQLite3)
 
 include(CTest)
 if(BUILD_TESTING)
-    add_executable(test_device_model
-        tests/test_device_model.c
-        src/model/device_model.c
-    )
+    add_executable(test_device_model tests/test_device_model.c src/model/device_model.c)
     edgeflow_target_common(test_device_model)
     add_test(NAME test_device_model COMMAND test_device_model)
 
-    add_executable(test_config
-        tests/test_config.c
-        src/platform/config.c
-    )
+    add_executable(test_config tests/test_config.c src/platform/config.c)
     edgeflow_target_common(test_config)
     add_test(NAME test_config COMMAND test_config WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
@@ -70,4 +84,55 @@ if(BUILD_TESTING)
     )
     edgeflow_target_common(test_adapter)
     add_test(NAME test_adapter COMMAND test_adapter WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
+
+    add_executable(test_ring tests/test_ring.c src/core/ring.c src/model/device_model.c)
+    edgeflow_target_common(test_ring)
+    add_test(NAME test_ring COMMAND test_ring)
+
+    add_executable(test_modbus_crc
+        tests/test_modbus_crc.c
+        src/ingress/modbus_rtu.c
+        src/ingress/modbus_serial.c
+        src/common/time_util.c
+        src/model/device_model.c
+        src/platform/logger.c
+    )
+    edgeflow_target_common(test_modbus_crc)
+    add_test(NAME test_modbus_crc COMMAND test_modbus_crc)
+
+    add_executable(test_state_engine
+        tests/test_state_engine.c
+        src/runtime/state_engine.c
+        src/model/device_model.c
+        src/platform/config.c
+    )
+    edgeflow_target_common(test_state_engine)
+    add_test(NAME test_state_engine COMMAND test_state_engine)
+
+    add_executable(test_command_scheduler
+        tests/test_command_scheduler.c
+        src/runtime/command_scheduler.c
+        src/ingress/modbus_adapter.c
+        src/ingress/modbus_rtu.c
+        src/ingress/modbus_serial.c
+        src/ingress/adapter.c
+        src/model/device_model.c
+        src/platform/config.c
+        src/platform/logger.c
+        src/platform/storage.c
+        src/common/time_util.c
+    )
+    edgeflow_target_common(test_command_scheduler)
+    target_link_libraries(test_command_scheduler PRIVATE SQLite::SQLite3)
+    add_test(NAME test_command_scheduler COMMAND test_command_scheduler)
+
+    add_executable(test_storage
+        tests/test_storage.c
+        src/platform/storage.c
+        src/model/device_model.c
+        src/platform/config.c
+    )
+    edgeflow_target_common(test_storage)
+    target_link_libraries(test_storage PRIVATE SQLite::SQLite3)
+    add_test(NAME test_storage COMMAND test_storage)
 endif()

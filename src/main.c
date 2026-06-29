@@ -1,27 +1,28 @@
 /*
- * main.c — EdgeFlow 进程入口
+ * main.c — EdgeFlow 进程入口（完整运行时 M3–M10 集成）
  *
- * 平台：Linux（默认执行环境）
+ * 平台：Linux
  *
- * 学习阶段：M3（Device Adapter 插件接口）
- *
- * 启动流程：
- *   1. 解析 -c / --config
- *   2. gateway_config_load
- *   3. logger_init
- *   4. 注册 stub Adapter → init_all → poll_all → 日志打印 telemetry
- *   5. adapter shutdown + logger_shutdown
- *
- * 尚未实现：M8 轮询线程、M5 状态机、M9 MQTT
+ * 流程：配置 → 日志 → gateway_app 双线程运行 → SIGINT 优雅退出
  */
 
-#include "ingress/adapter.h"
-#include "ingress/stub_adapter.h"
+#include "common/time_util.h"
 #include "platform/config.h"
 #include "platform/logger.h"
+#include "runtime/app.h"
 
+#include <signal.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <string.h>
+
+static atomic_bool g_exit_requested;
+
+static void on_signal(int signo)
+{
+    (void)signo;
+    atomic_store(&g_exit_requested, true);
+}
 
 static const char *parse_config_path(int argc, char **argv)
 {
@@ -37,10 +38,12 @@ int main(int argc, char **argv)
 {
     const char *config_path = parse_config_path(argc, argv);
     gateway_config_t cfg;
-    adapter_registry_t registry;
-    device_adapter_t stub;
-    telemetry_t points[16];
-    int n;
+    gateway_app_t app;
+
+    signal(SIGINT, on_signal);
+    signal(SIGTERM, on_signal);
+    signal(SIGHUP, on_signal);
+    atomic_init(&g_exit_requested, false);
 
     if (gateway_config_load(config_path, &cfg) != 0) {
         fprintf(stderr, "failed to load config: %s\n", config_path);
@@ -48,42 +51,35 @@ int main(int argc, char **argv)
     }
 
     if (logger_init(cfg.log_dir) != 0) {
-        fprintf(stderr, "failed to init logger, fallback to stderr (dir=%s)\n", cfg.log_dir);
+        fprintf(stderr, "failed to init logger, fallback stderr (dir=%s)\n", cfg.log_dir);
     }
 
-    log_info("edgeflow M3 startup: device_id=%s config=%s simulate=%s",
-             cfg.device_id,
-             config_path,
-             cfg.simulate ? "true" : "false");
+    log_info("edgeflow startup: config=%s device_id=%s", config_path, cfg.device_id);
 
-    /* --- M3：注册并初始化 Adapter 插件 --- */
-    adapter_registry_init(&registry);
-    stub_adapter_fill(&stub);
-    if (adapter_registry_register(&registry, &stub) != ADAPTER_OK) {
-        log_error("failed to register stub adapter");
+    if (gateway_app_init(&app, &cfg) != 0) {
+        log_error("gateway_app_init failed");
         logger_shutdown();
         return 1;
     }
-    if (adapter_registry_init_all(&registry, &cfg) != 0) {
-        log_warn("one or more adapters failed init");
+    if (gateway_app_run(&app) != 0) {
+        log_error("gateway_app_run failed");
+        gateway_app_destroy(&app);
+        logger_shutdown();
+        return 1;
     }
 
-    /* 单轮采集演示；M8 将在 ingress 线程中按 poll_interval_ms 循环调用 */
-    n = adapter_registry_poll_all(&registry, points, 16U);
-    log_info("adapter poll: telemetry_count=%d", n);
-    for (int i = 0; i < n; i++) {
-        log_info("  %s.%s=%.2f %s quality=%s ts_ms=%llu",
-                 points[i].device_id,
-                 points[i].point_id,
-                 points[i].value,
-                 points[i].unit,
-                 points[i].quality == TELEMETRY_QUALITY_GOOD ? "good" : "bad",
-                 (unsigned long long)points[i].ts_ms);
+    printf("EdgeFlow running — Ctrl+C to stop\n");
+    printf("  log:      %s/edgeflow.log\n", cfg.log_dir);
+    printf("  metrics:  %s\n", cfg.metrics_path);
+    printf("  cache:    %s\n", cfg.cache_path);
+    printf("  sqlite:   %s (use_sqlite=%s)\n", cfg.sqlite_path, cfg.use_sqlite ? "true" : "false");
+
+    while (!atomic_load(&g_exit_requested)) {
+        edgeflow_sleep_ms(200U);
     }
 
-    printf("EdgeFlow M3 OK — polled %d telemetry point(s), log_dir=%s\n", n, cfg.log_dir);
-
-    adapter_registry_shutdown_all(&registry);
+    gateway_app_stop(&app);
+    gateway_app_destroy(&app);
     logger_shutdown();
     return 0;
 }
