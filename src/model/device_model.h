@@ -20,7 +20,7 @@
  * 实现约定：
  *   - 字符串字段使用固定长度 char[]，值语义，可整块 memcpy 进 SPSC 队列
  *   - 本模块只提供类型定义与构造辅助函数，不含注册表、协议解析、状态机逻辑
- *   - 详见 docs/DEVICE_MODEL.md
+ *   - 详见 docs/架构与设计.md
  */
 
 #include <stdint.h>

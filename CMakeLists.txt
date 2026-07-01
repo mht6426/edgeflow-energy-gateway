@@ -26,6 +26,8 @@ endfunction()
 
 find_package(SQLite3 REQUIRED)
 
+add_subdirectory(third_party)
+
 set(EDGEFLOW_CORE_SOURCES
     src/model/device_model.c
     src/platform/config.c
@@ -40,8 +42,8 @@ set(EDGEFLOW_CORE_SOURCES
     src/ingress/adapter.c
     src/ingress/stub_adapter.c
     src/ingress/modbus_rtu.c
-    src/ingress/modbus_serial.c
     src/ingress/modbus_adapter.c
+    src/ingress/modbus_libmodbus.c
     src/runtime/state_engine.c
     src/runtime/command_scheduler.c
     src/runtime/app.c
@@ -54,14 +56,14 @@ add_executable(edgeflow
     ${EDGEFLOW_CORE_SOURCES}
 )
 edgeflow_target_common(edgeflow)
-target_link_libraries(edgeflow PRIVATE pthread SQLite::SQLite3)
+target_link_libraries(edgeflow PRIVATE pthread SQLite::SQLite3 cjson modbus)
 
 add_executable(edgeflow-cli
     src/cli/main.c
     src/platform/config.c
 )
 edgeflow_target_common(edgeflow-cli)
-target_link_libraries(edgeflow-cli PRIVATE SQLite::SQLite3)
+target_link_libraries(edgeflow-cli PRIVATE SQLite::SQLite3 cjson)
 
 include(CTest)
 if(BUILD_TESTING)
@@ -71,6 +73,7 @@ if(BUILD_TESTING)
 
     add_executable(test_config tests/test_config.c src/platform/config.c)
     edgeflow_target_common(test_config)
+    target_link_libraries(test_config PRIVATE cjson)
     add_test(NAME test_config COMMAND test_config WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
     add_executable(test_adapter
@@ -83,6 +86,7 @@ if(BUILD_TESTING)
         src/common/time_util.c
     )
     edgeflow_target_common(test_adapter)
+    target_link_libraries(test_adapter PRIVATE cjson)
     add_test(NAME test_adapter COMMAND test_adapter WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 
     add_executable(test_ring tests/test_ring.c src/core/ring.c src/model/device_model.c)
@@ -92,7 +96,6 @@ if(BUILD_TESTING)
     add_executable(test_modbus_crc
         tests/test_modbus_crc.c
         src/ingress/modbus_rtu.c
-        src/ingress/modbus_serial.c
         src/common/time_util.c
         src/model/device_model.c
         src/platform/logger.c
@@ -107,6 +110,7 @@ if(BUILD_TESTING)
         src/platform/config.c
     )
     edgeflow_target_common(test_state_engine)
+    target_link_libraries(test_state_engine PRIVATE cjson)
     add_test(NAME test_state_engine COMMAND test_state_engine)
 
     add_executable(test_command_scheduler
@@ -114,7 +118,7 @@ if(BUILD_TESTING)
         src/runtime/command_scheduler.c
         src/ingress/modbus_adapter.c
         src/ingress/modbus_rtu.c
-        src/ingress/modbus_serial.c
+        src/ingress/modbus_libmodbus.c
         src/ingress/adapter.c
         src/model/device_model.c
         src/platform/config.c
@@ -123,7 +127,7 @@ if(BUILD_TESTING)
         src/common/time_util.c
     )
     edgeflow_target_common(test_command_scheduler)
-    target_link_libraries(test_command_scheduler PRIVATE SQLite::SQLite3)
+    target_link_libraries(test_command_scheduler PRIVATE SQLite::SQLite3 cjson modbus)
     add_test(NAME test_command_scheduler COMMAND test_command_scheduler)
 
     add_executable(test_storage
@@ -133,6 +137,6 @@ if(BUILD_TESTING)
         src/platform/config.c
     )
     edgeflow_target_common(test_storage)
-    target_link_libraries(test_storage PRIVATE SQLite::SQLite3)
+    target_link_libraries(test_storage PRIVATE SQLite::SQLite3 cjson)
     add_test(NAME test_storage COMMAND test_storage)
 endif()

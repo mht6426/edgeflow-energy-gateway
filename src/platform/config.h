@@ -39,6 +39,17 @@ typedef struct {
     uint32_t mqtt_keepalive_sec;
     uint32_t watchdog_interval_ms;
     uint32_t heartbeat_interval_ms;
+
+    /* Modbus（libmodbus 后端） */
+    char modbus_transport[8];   /* "rtu" | "tcp" */
+    char modbus_tcp_host[128];
+    uint16_t modbus_tcp_port;
+    uint8_t modbus_slave_id;
+    uint32_t modbus_baud_rate;
+    char modbus_parity;
+    uint8_t modbus_data_bits;
+    uint8_t modbus_stop_bits;
+    uint32_t modbus_timeout_ms;
 } gateway_config_t;
 
 void gateway_config_defaults(gateway_config_t *cfg);

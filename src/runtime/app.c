@@ -56,7 +56,13 @@ static void *ingress_main(void *arg)
 
 static device_adapter_t *find_modbus_adapter(gateway_app_t *app)
 {
-    return adapter_registry_find(&app->registry, DEVICE_PROTOCOL_MODBUS_RTU);
+    device_adapter_t *adapter;
+
+    adapter = adapter_registry_find(&app->registry, DEVICE_PROTOCOL_MODBUS_RTU);
+    if (adapter != NULL) {
+        return adapter;
+    }
+    return adapter_registry_find(&app->registry, DEVICE_PROTOCOL_MODBUS_TCP);
 }
 
 static void *worker_main(void *arg)

@@ -17,7 +17,7 @@ EMS/储能只是内置示例场景，用于验证控制器框架能承载 BMS/PC
 
 ## 当前真实实现状态
 
-> 本表只列代码里**确实跑通**的能力。文档其余部分（ARCHITECTURE / PROJECT_SPEC 等）描述的是**目标架构**，其中未实现项见下方"尚未实现"清单。
+> 本表只列代码里**确实跑通**的能力。未实现项见 [docs/后续规划.md](docs/后续规划.md)；权威边界见 [docs/实现状态.md](docs/实现状态.md)。
 
 ### 已实现
 
@@ -26,7 +26,7 @@ EMS/储能只是内置示例场景，用于验证控制器框架能承载 BMS/PC
 | 三线程运行时（ingress / worker / monitor） | `runtime/app.c` |
 | SPSC 无锁环形队列（采集与处理解耦） | `core/ring.*` |
 | epoll + timerfd 周期 Reactor（单定时器） | `core/reactor.*` |
-| Modbus RTU：CRC16 + 模拟数据 + termios 真实串口 | `ingress/modbus_*` |
+| Modbus RTU/TCP：CRC16 + libmodbus + 模拟数据 | `ingress/modbus_*` |
 | 状态机 + 简单削峰（`grid_power_kw` 超阈值放电）+ 温度/SOC 告警 | `runtime/state_engine.*` |
 | Command Scheduler（PENDING/SENT/ACKED/VERIFIED/FAILED，模拟回读） | `runtime/command_scheduler.*` |
 | SQLite WAL + JSONL 审计 + `uploaded` 标志 + 批量补传 | `platform/storage.*` |
@@ -35,7 +35,7 @@ EMS/储能只是内置示例场景，用于验证控制器框架能承载 BMS/PC
 
 ### 尚未实现（目标架构里出现，但代码中没有，勿当成已完成能力）
 
-- Modbus TCP / 裸 TCP / UDP adapter（当前只有 Modbus RTU）
+- Modbus TCP adapter（已通过 libmodbus 支持，配置 `modbus_transport=tcp`）
 - Thread Pool（当前是固定三线程，不是线程池）
 - 分时电价(TOU)、最大需量限制、防逆流、恒功率（当前只有单一削峰规则）
 - 急停/消防联锁、`DEGRADED`/`STANDBY`/`STOPPED` 完整状态转换（当前只有 `INIT`/`RUNNING`/`FAULT`）
@@ -50,13 +50,13 @@ EMS/储能只是内置示例场景，用于验证控制器框架能承载 BMS/PC
 | 构建 | CMake ≥ 3.16 |
 | 平台 | **仅 Linux**（x86_64 开发 / aarch64 板端交叉编译） |
 | 并发 | pthread + C11 atomic + epoll/timerfd |
-| 协议 | Modbus RTU、MQTT 3.1.1（QoS0，自研最小实现） |
+| 协议 | Modbus RTU/TCP（libmodbus）、MQTT 3.1.1（QoS0，自研最小实现） |
 | 存储 | SQLite WAL + JSONL 审计 |
-| 配置 | JSON（手写扁平解析） |
+| 配置 | JSON（cJSON） |
 
 ## 运行时数据流
 
-三线程模型，详见 [docs/RUNTIME_FLOW.md](docs/RUNTIME_FLOW.md)：
+三线程模型，详见 [docs/运行时数据流.md](docs/运行时数据流.md)：
 
 ```mermaid
 flowchart TB
@@ -69,7 +69,7 @@ flowchart TB
 
 ## 快速开始（Linux）
 
-环境要求：gcc/clang、cmake ≥ 3.16、libsqlite3-dev。
+环境要求：gcc/clang、cmake ≥ 3.16、libsqlite3-dev。第三方库 cJSON、libmodbus 已 vendored 于 `third_party/`，无需单独安装。
 
 ```bash
 sudo apt install -y cmake build-essential libsqlite3-dev
@@ -97,31 +97,21 @@ cmake --build build-aarch64
 
 ## 文档索引
 
-```text
-docs/
-├── CODE_STYLE.md             # 执行环境(Linux) + 注释规范
-├── LEARNING_PATH.md          # 逐模块开发记录（M1–M10）
-├── PROGRESS.md               # 开发进度总览
-├── IMPLEMENTATION_STATUS.md  # ★ 已实现 vs 规划（实现边界以此为准）
-├── RUNTIME_FLOW.md           # 三线程运行时数据流
-├── PROJECT_SPEC.md           # 项目定位与硬约束
-├── ARCHITECTURE.md           # 目标架构（含未实现项，已标注）
-├── DESIGN_DECISIONS.md       # 关键设计取舍记录
-├── CAPABILITY_CHECKLIST.md   # 已实现能力自查清单
-├── DEVICE_MODEL.md           # Device/Point/Alarm/Command/Telemetry 模型
-├── MODULE_DESIGN.md          # 模块职责、输入输出、线程模型
-├── MARKET_REQUIREMENTS.md    # 示例场景与功能映射
-├── ROADMAP.md                # 后续可做项
-├── HARDWARE_SELECTION.md     # RK3568/RK3588 工控板选型
-├── DEPLOY.md                 # 板端部署说明
-├── TEST_PLAN.md              # 模块级测试矩阵
-├── TROUBLESHOOTING.md        # 故障闭环
-└── SOAK_TEST_RECORD.md       # 长稳测试记录
-```
+完整说明见 [docs/文档索引.md](docs/文档索引.md)。核心文档：
+
+| 文档 | 用途 |
+| --- | --- |
+| [实现状态.md](docs/实现状态.md) | **已实现 vs 未实现（权威边界）** |
+| [架构与设计.md](docs/架构与设计.md) | 分层架构与设计取舍 |
+| [运行时数据流.md](docs/运行时数据流.md) | 三线程数据流与源码对照 |
+| [学习路径.md](docs/学习路径.md) | 按模块阅读顺序 |
+| [开发指南.md](docs/开发指南.md) | 规范、部署、测试、长稳记录 |
+| [故障排查.md](docs/故障排查.md) | 常见问题 |
+| [后续规划.md](docs/后续规划.md) | 未实现能力与阶段目标 |
 
 ## 开发原则
 
-每个模块按 `设计 → 代码（含中文注释）→ 单元测试 → 集成测试` 推进，遵守 [docs/CODE_STYLE.md](docs/CODE_STYLE.md)。
+每个模块按 `设计 → 代码（含中文注释）→ 单元测试 → 集成测试` 推进，遵守 [docs/开发指南.md](docs/开发指南.md)。
 
 ## 许可证
 

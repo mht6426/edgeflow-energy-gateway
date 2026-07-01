@@ -1,26 +1,18 @@
 /*
- * config.c — JSON 配置加载实现（M2）
+ * config.c — JSON 配置加载（cJSON）
  *
- * 平台：Linux（fopen、路径分隔符 /）
- *
- * 解析策略：
- *   轻量手写解析，无 cJSON 等第三方库；仅支持本项目 gateway.json 的扁平键值。
- *   不支持嵌套对象、数组、注释。字段缺失时保留 gateway_config_defaults 的值。
- *
- * 局限（已知，M10 可改进）：
- *   - 无 schema 校验、无字段范围检查
- *   - 键名子串误匹配理论风险（当前键名互不包含，可接受）
- *
- * 不负责：热更新、环境变量覆盖、加密字段。
+ * 平台：Linux
+ * 字段缺失时保留 gateway_config_defaults 的值。
  */
 
 #include "platform/config.h"
+
+#include <cJSON.h>
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-/* 安全字符串拷贝，保证 NUL 终止 */
 static void copy_string(char *dst, size_t dst_len, const char *src)
 {
     if (dst_len == 0U) {
@@ -29,10 +21,6 @@ static void copy_string(char *dst, size_t dst_len, const char *src)
     snprintf(dst, dst_len, "%s", src != NULL ? src : "");
 }
 
-/*
- * 将整个配置文件读入堆内存（调用方 free）。
- * 使用 "rb" 按字节精确读取，按文件长度一次性分配缓冲。
- */
 static int read_file(const char *path, char **out)
 {
     FILE *fp = fopen(path, "rb");
@@ -66,117 +54,67 @@ static int read_file(const char *path, char **out)
     return 0;
 }
 
-/*
- * 从扁平 JSON 文本提取字符串字段："key": "value"
- * 未找到或格式不符时 dst 保持不变。
- */
-static void json_get_string(const char *json, const char *key, char *dst, size_t dst_len)
+static void json_copy_string(const cJSON *root, const char *key, char *dst, size_t dst_len)
 {
-    char pattern[64];
-    const char *start;
-    const char *end;
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, key);
 
-    if (json == NULL || key == NULL || dst == NULL || dst_len == 0U) {
-        return;
+    if (cJSON_IsString(item) && item->valuestring != NULL) {
+        copy_string(dst, dst_len, item->valuestring);
     }
-    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-    start = strstr(json, pattern);
-    if (start == NULL) {
-        return;
-    }
-    start = strchr(start, ':');
-    if (start == NULL) {
-        return;
-    }
-    start++;
-    while (*start == ' ' || *start == '\t') {
-        start++;
-    }
-    if (*start != '"') {
-        return;
-    }
-    start++;
-    end = strchr(start, '"');
-    if (end == NULL) {
-        return;
-    }
-    snprintf(dst, dst_len, "%.*s", (int)(end - start), start);
 }
 
-/* 解析 "key": true|false；找到并解析成功返回 true */
-static bool json_get_bool(const char *json, const char *key, bool *out)
+static void json_copy_bool(const cJSON *root, const char *key, bool *dst)
 {
-    char pattern[64];
-    const char *pos;
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, key);
 
-    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-    pos = strstr(json, pattern);
-    if (pos == NULL) {
-        return false;
+    if (cJSON_IsBool(item)) {
+        *dst = cJSON_IsTrue(item);
     }
-    pos = strchr(pos, ':');
-    if (pos == NULL) {
-        return false;
-    }
-    pos++;
-    while (*pos == ' ' || *pos == '\t') {
-        pos++;
-    }
-    if (strncmp(pos, "true", 4) == 0) {
-        *out = true;
-        return true;
-    }
-    if (strncmp(pos, "false", 5) == 0) {
-        *out = false;
-        return true;
-    }
-    return false;
 }
 
-/* 解析无符号整数 "key": 123 */
-static bool json_get_uint(const char *json, const char *key, uint32_t *out)
+static void json_copy_uint32(const cJSON *root, const char *key, uint32_t *dst)
 {
-    char pattern[64];
-    const char *pos;
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, key);
 
-    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-    pos = strstr(json, pattern);
-    if (pos == NULL) {
-        return false;
+    if (cJSON_IsNumber(item)) {
+        *dst = (uint32_t)item->valuedouble;
     }
-    pos = strchr(pos, ':');
-    if (pos == NULL) {
-        return false;
-    }
-    pos++;
-    while (*pos == ' ' || *pos == '\t') {
-        pos++;
-    }
-    *out = (uint32_t)strtoul(pos, NULL, 10);
-    return true;
 }
 
-/* 解析浮点 "key": 60.0 */
-static bool json_get_double(const char *json, const char *key, double *out)
+static void json_copy_uint16(const cJSON *root, const char *key, uint16_t *dst)
 {
-    char pattern[64];
-    const char *pos;
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, key);
 
-    snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-    pos = strstr(json, pattern);
-    if (pos == NULL) {
-        return false;
+    if (cJSON_IsNumber(item)) {
+        *dst = (uint16_t)item->valuedouble;
     }
-    pos = strchr(pos, ':');
-    if (pos == NULL) {
-        return false;
+}
+
+static void json_copy_uint8(const cJSON *root, const char *key, uint8_t *dst)
+{
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, key);
+
+    if (cJSON_IsNumber(item)) {
+        *dst = (uint8_t)item->valuedouble;
     }
-    pos++;
-    while (*pos == ' ' || *pos == '\t') {
-        pos++;
+}
+
+static void json_copy_double(const cJSON *root, const char *key, double *dst)
+{
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, key);
+
+    if (cJSON_IsNumber(item)) {
+        *dst = item->valuedouble;
     }
-    *out = strtod(pos, NULL);
-    return true;
+}
+
+static void json_copy_parity(const cJSON *root, const char *key, char *dst)
+{
+    const cJSON *item = cJSON_GetObjectItemCaseSensitive(root, key);
+
+    if (cJSON_IsString(item) && item->valuestring != NULL && item->valuestring[0] != '\0') {
+        *dst = item->valuestring[0];
+    }
 }
 
 void gateway_config_defaults(gateway_config_t *cfg)
@@ -186,7 +124,6 @@ void gateway_config_defaults(gateway_config_t *cfg)
     }
     memset(cfg, 0, sizeof(*cfg));
 
-    /* 与 configs/gateway.json 示例对齐，便于开发机 /tmp 下零配置试运行 */
     copy_string(cfg->device_id, sizeof(cfg->device_id), "gw-dev");
     cfg->simulate = true;
     copy_string(cfg->serial_device, sizeof(cfg->serial_device), "/dev/ttyUSB0");
@@ -211,68 +148,76 @@ void gateway_config_defaults(gateway_config_t *cfg)
     cfg->mqtt_keepalive_sec = 60U;
     cfg->watchdog_interval_ms = 2000U;
     cfg->heartbeat_interval_ms = 5000U;
+
+    copy_string(cfg->modbus_transport, sizeof(cfg->modbus_transport), "rtu");
+    copy_string(cfg->modbus_tcp_host, sizeof(cfg->modbus_tcp_host), "127.0.0.1");
+    cfg->modbus_tcp_port = 502U;
+    cfg->modbus_slave_id = 1U;
+    cfg->modbus_baud_rate = 9600U;
+    cfg->modbus_parity = 'N';
+    cfg->modbus_data_bits = 8U;
+    cfg->modbus_stop_bits = 1U;
+    cfg->modbus_timeout_ms = 500U;
 }
 
 int gateway_config_load(const char *path, gateway_config_t *cfg)
 {
-    char *json = NULL;
-    bool simulate_flag;
-    bool use_sqlite_flag;
-    uint32_t u32_val;
+    char *text = NULL;
+    cJSON *root = NULL;
+    int rc = -1;
 
     if (path == NULL || cfg == NULL) {
         return -1;
     }
 
-    /* 先 defaults，再按 JSON 覆盖 — 保证缺字段时仍可运行 */
     gateway_config_defaults(cfg);
-    if (read_file(path, &json) != 0) {
+    if (read_file(path, &text) != 0) {
         return -1;
     }
 
-    json_get_string(json, "device_id", cfg->device_id, sizeof(cfg->device_id));
-    if (json_get_bool(json, "simulate", &simulate_flag)) {
-        cfg->simulate = simulate_flag;
-    }
-    json_get_string(json, "serial_device", cfg->serial_device, sizeof(cfg->serial_device));
-    if (json_get_uint(json, "poll_interval_ms", &u32_val)) {
-        cfg->poll_interval_ms = u32_val;
-    }
-    if (json_get_uint(json, "queue_size", &u32_val)) {
-        cfg->queue_size = u32_val;
-    }
-    (void)json_get_double(json, "deadband", &cfg->deadband);
-    (void)json_get_double(json, "temp_high", &cfg->temp_high);
-    (void)json_get_double(json, "peak_shaving_threshold_kw", &cfg->peak_shaving_threshold_kw);
-    (void)json_get_double(json, "max_discharge_kw", &cfg->max_discharge_kw);
-    (void)json_get_double(json, "min_discharge_soc", &cfg->min_discharge_soc);
-    json_get_string(json, "broker_host", cfg->broker_host, sizeof(cfg->broker_host));
-    if (json_get_uint(json, "broker_port", &u32_val)) {
-        cfg->broker_port = (uint16_t)u32_val;
-    }
-    json_get_string(json, "mqtt_topic", cfg->mqtt_topic, sizeof(cfg->mqtt_topic));
-    json_get_string(json, "mqtt_alarm_topic", cfg->mqtt_alarm_topic, sizeof(cfg->mqtt_alarm_topic));
-    json_get_string(json, "mqtt_heartbeat_topic", cfg->mqtt_heartbeat_topic, sizeof(cfg->mqtt_heartbeat_topic));
-    json_get_string(json, "log_dir", cfg->log_dir, sizeof(cfg->log_dir));
-    json_get_string(json, "metrics_path", cfg->metrics_path, sizeof(cfg->metrics_path));
-    json_get_string(json, "cache_path", cfg->cache_path, sizeof(cfg->cache_path));
-    json_get_string(json, "sqlite_path", cfg->sqlite_path, sizeof(cfg->sqlite_path));
-    if (json_get_bool(json, "use_sqlite", &use_sqlite_flag)) {
-        cfg->use_sqlite = use_sqlite_flag;
-    }
-    if (json_get_uint(json, "mqtt_replay_batch", &u32_val)) {
-        cfg->mqtt_replay_batch = u32_val;
-    }
-    if (json_get_uint(json, "mqtt_keepalive_sec", &u32_val)) {
-        cfg->mqtt_keepalive_sec = u32_val;
-    }
-    if (json_get_uint(json, "watchdog_interval_ms", &u32_val)) {
-        cfg->watchdog_interval_ms = u32_val;
-    }
-    if (json_get_uint(json, "heartbeat_interval_ms", &u32_val)) {
-        cfg->heartbeat_interval_ms = u32_val;
+    root = cJSON_Parse(text);
+    free(text);
+    if (root == NULL || !cJSON_IsObject(root)) {
+        cJSON_Delete(root);
+        return -1;
     }
 
-    free(json);
-    return 0;
+    json_copy_string(root, "device_id", cfg->device_id, sizeof(cfg->device_id));
+    json_copy_bool(root, "simulate", &cfg->simulate);
+    json_copy_string(root, "serial_device", cfg->serial_device, sizeof(cfg->serial_device));
+    json_copy_uint32(root, "poll_interval_ms", &cfg->poll_interval_ms);
+    json_copy_uint32(root, "queue_size", &cfg->queue_size);
+    json_copy_double(root, "deadband", &cfg->deadband);
+    json_copy_double(root, "temp_high", &cfg->temp_high);
+    json_copy_double(root, "peak_shaving_threshold_kw", &cfg->peak_shaving_threshold_kw);
+    json_copy_double(root, "max_discharge_kw", &cfg->max_discharge_kw);
+    json_copy_double(root, "min_discharge_soc", &cfg->min_discharge_soc);
+    json_copy_string(root, "broker_host", cfg->broker_host, sizeof(cfg->broker_host));
+    json_copy_uint16(root, "broker_port", &cfg->broker_port);
+    json_copy_string(root, "mqtt_topic", cfg->mqtt_topic, sizeof(cfg->mqtt_topic));
+    json_copy_string(root, "mqtt_alarm_topic", cfg->mqtt_alarm_topic, sizeof(cfg->mqtt_alarm_topic));
+    json_copy_string(root, "mqtt_heartbeat_topic", cfg->mqtt_heartbeat_topic, sizeof(cfg->mqtt_heartbeat_topic));
+    json_copy_string(root, "log_dir", cfg->log_dir, sizeof(cfg->log_dir));
+    json_copy_string(root, "metrics_path", cfg->metrics_path, sizeof(cfg->metrics_path));
+    json_copy_string(root, "cache_path", cfg->cache_path, sizeof(cfg->cache_path));
+    json_copy_string(root, "sqlite_path", cfg->sqlite_path, sizeof(cfg->sqlite_path));
+    json_copy_bool(root, "use_sqlite", &cfg->use_sqlite);
+    json_copy_uint32(root, "mqtt_replay_batch", &cfg->mqtt_replay_batch);
+    json_copy_uint32(root, "mqtt_keepalive_sec", &cfg->mqtt_keepalive_sec);
+    json_copy_uint32(root, "watchdog_interval_ms", &cfg->watchdog_interval_ms);
+    json_copy_uint32(root, "heartbeat_interval_ms", &cfg->heartbeat_interval_ms);
+
+    json_copy_string(root, "modbus_transport", cfg->modbus_transport, sizeof(cfg->modbus_transport));
+    json_copy_string(root, "modbus_tcp_host", cfg->modbus_tcp_host, sizeof(cfg->modbus_tcp_host));
+    json_copy_uint16(root, "modbus_tcp_port", &cfg->modbus_tcp_port);
+    json_copy_uint8(root, "modbus_slave_id", &cfg->modbus_slave_id);
+    json_copy_uint32(root, "modbus_baud_rate", &cfg->modbus_baud_rate);
+    json_copy_parity(root, "modbus_parity", &cfg->modbus_parity);
+    json_copy_uint8(root, "modbus_data_bits", &cfg->modbus_data_bits);
+    json_copy_uint8(root, "modbus_stop_bits", &cfg->modbus_stop_bits);
+    json_copy_uint32(root, "modbus_timeout_ms", &cfg->modbus_timeout_ms);
+
+    cJSON_Delete(root);
+    rc = 0;
+    return rc;
 }

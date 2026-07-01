@@ -22,5 +22,14 @@
   "mqtt_replay_batch": 50,
   "mqtt_keepalive_sec": 60,
   "watchdog_interval_ms": 2000,
-  "heartbeat_interval_ms": 5000
+  "heartbeat_interval_ms": 5000,
+  "modbus_transport": "rtu",
+  "modbus_tcp_host": "127.0.0.1",
+  "modbus_tcp_port": 502,
+  "modbus_slave_id": 1,
+  "modbus_baud_rate": 9600,
+  "modbus_parity": "N",
+  "modbus_data_bits": 8,
+  "modbus_stop_bits": 1,
+  "modbus_timeout_ms": 500
 }
